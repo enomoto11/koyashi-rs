@@ -51,7 +51,7 @@ fn run_check(args: CheckArgs) -> Result<u8> {
         }
 
         let stats = analysis::aggregate(&sites);
-        let Some(classification) = analysis::classify(&stats) else {
+        let Some(classification) = analysis::classify(&stats, field.used_by_derive) else {
             continue;
         };
         if !include_allows(&args.include, classification) {
@@ -99,15 +99,17 @@ fn classification_of(filter: ClassFilter) -> Classification {
         ClassFilter::Unused => Classification::Unused,
         ClassFilter::WriteOnly => Classification::WriteOnly,
         ClassFilter::ReadOnly => Classification::ReadOnly,
+        ClassFilter::DeriveOnly => Classification::DeriveOnly,
     }
 }
 
 /// Map the severity threshold and counts to an exit code.
 fn exit_code(severity: Severity, summary: &Summary) -> u8 {
     let dead = summary.unused > 0 || summary.write_only > 0;
+    let advisory = summary.read_only > 0 || summary.derive_only > 0;
     let triggered = match severity {
         Severity::Error | Severity::Warn => dead,
-        Severity::Info => dead || summary.read_only > 0,
+        Severity::Info => dead || advisory,
     };
     u8::from(triggered)
 }
@@ -121,6 +123,7 @@ mod tests {
             unused,
             write_only,
             read_only,
+            ..Summary::default()
         }
     }
 
@@ -135,6 +138,16 @@ mod tests {
     fn read_only_only_gates_at_info() {
         assert_eq!(exit_code(Severity::Warn, &summary(0, 0, 3)), 0);
         assert_eq!(exit_code(Severity::Info, &summary(0, 0, 3)), 1);
+    }
+
+    #[test]
+    fn derive_only_only_gates_at_info() {
+        let derive_only = Summary {
+            derive_only: 2,
+            ..Summary::default()
+        };
+        assert_eq!(exit_code(Severity::Warn, &derive_only), 0);
+        assert_eq!(exit_code(Severity::Info, &derive_only), 1);
     }
 
     #[test]

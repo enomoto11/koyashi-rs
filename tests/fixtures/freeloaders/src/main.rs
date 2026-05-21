@@ -18,6 +18,13 @@ struct Orphan {
     forgotten: i32,
 }
 
+/// Constructed and `Debug`-printed, but its field is never read directly.
+#[derive(Debug)]
+struct Telemetry {
+    /// derive-only: read only through the `Debug` derive.
+    trace_id: String,
+}
+
 fn main() {
     let mut settings = Settings {
         label: "demo".to_string(),
@@ -31,4 +38,9 @@ fn main() {
     if settings.counter > 0 {
         settings.last_message = format!("ran {} times", settings.counter);
     }
+
+    let telemetry = Telemetry {
+        trace_id: "trace-001".to_string(),
+    };
+    println!("{telemetry:?}");
 }

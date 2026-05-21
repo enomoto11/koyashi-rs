@@ -55,7 +55,7 @@ fn counts_line(finding: &Finding) -> Option<String> {
                 finding.reads, finding.writes
             )
         }),
-        Classification::ReadOnly => {
+        Classification::ReadOnly | Classification::DeriveOnly => {
             let initializer = if finding.initializers == 1 {
                 "initializer"
             } else {
@@ -78,6 +78,7 @@ fn label(classification: Classification, use_color: bool) -> String {
     let colored = match classification {
         Classification::Unused | Classification::WriteOnly => text.as_str().red(),
         Classification::ReadOnly => text.as_str().yellow(),
+        Classification::DeriveOnly => text.as_str().blue(),
     };
     colored.to_string()
 }

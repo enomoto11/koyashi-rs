@@ -105,6 +105,7 @@ fn visit_items(
                 if struct_filter.is_some_and(|wanted| wanted != struct_name) {
                     continue;
                 }
+                let used_by_derive = has_field_reading_derive(&item_struct.attrs);
                 if let syn::Fields::Named(named) = &item_struct.fields {
                     for field in &named.named {
                         let Some(ident) = &field.ident else { continue };
@@ -117,6 +118,7 @@ fn visit_items(
                                 line: start.line as u32,
                                 character: start.column as u32,
                             },
+                            used_by_derive,
                         });
                     }
                 }
@@ -142,6 +144,39 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
             false
         }
     })
+}
+
+/// Derive macros whose generated code reads every field of the struct.
+const FIELD_READING_DERIVES: &[&str] = &[
+    "Debug",
+    "Clone",
+    "Copy",
+    "PartialEq",
+    "Eq",
+    "PartialOrd",
+    "Ord",
+    "Hash",
+    "Serialize",
+    "Deserialize",
+];
+
+/// Whether the attributes contain a `#[derive(..)]` that reads every field.
+fn has_field_reading_derive(attrs: &[syn::Attribute]) -> bool {
+    let mut found = false;
+    for attr in attrs {
+        if !attr.path().is_ident("derive") {
+            continue;
+        }
+        let _ = attr.parse_nested_meta(|meta| {
+            if let Some(segment) = meta.path.segments.last()
+                && FIELD_READING_DERIVES.contains(&segment.ident.to_string().as_str())
+            {
+                found = true;
+            }
+            Ok(())
+        });
+    }
+    found
 }
 
 /// Walks an AST and records the role of every named field access.
@@ -252,10 +287,32 @@ mod tests {
         entries.into_iter().map(|(_, kind)| kind).collect()
     }
 
+    fn derive_detected(src: &str) -> bool {
+        let ast = syn::parse_file(src).expect("valid source");
+        match ast.items.into_iter().next() {
+            Some(syn::Item::Struct(item)) => has_field_reading_derive(&item.attrs),
+            _ => panic!("expected a struct"),
+        }
+    }
+
     #[test]
     fn collects_named_struct_fields() {
         let src = "struct User { id: u32, name: String }";
         assert_eq!(field_names(src, true), ["User::id", "User::name"]);
+    }
+
+    #[test]
+    fn detects_field_reading_derives() {
+        assert!(derive_detected("#[derive(Debug)] struct A { x: u8 }"));
+        assert!(derive_detected(
+            "#[derive(serde::Serialize)] struct A { x: u8 }"
+        ));
+        assert!(derive_detected(
+            "#[derive(Clone, PartialEq)] struct A { x: u8 }"
+        ));
+        assert!(!derive_detected("struct A { x: u8 }"));
+        // `Default` constructs fields rather than reading them.
+        assert!(!derive_detected("#[derive(Default)] struct A { x: u8 }"));
     }
 
     #[test]
