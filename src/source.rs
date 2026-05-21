@@ -85,8 +85,8 @@ fn collect_in_file(
 ) -> Result<()> {
     let content =
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let ast = syn::parse_file(&content)
-        .with_context(|| format!("failed to parse {}", path.display()))?;
+    let ast =
+        syn::parse_file(&content).with_context(|| format!("failed to parse {}", path.display()))?;
     visit_items(&ast.items, path, struct_filter, exclude_tests, defs);
     Ok(())
 }

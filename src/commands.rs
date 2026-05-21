@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::cli::{CheckArgs, Cli, ClassFilter, Command, OutputFormat, Severity};
-use crate::model::{Classification, Finding, Report, ReferenceKind, ReferenceSite, Summary};
+use crate::cli::{CheckArgs, ClassFilter, Cli, Command, OutputFormat, Severity};
+use crate::model::{Classification, Finding, ReferenceKind, ReferenceSite, Report, Summary};
 use crate::rust_analyzer::Analyzer;
 use crate::source::ReferenceKindMap;
 use crate::{analysis, report, source, workspace};
@@ -21,11 +21,8 @@ pub fn run(cli: Cli) -> Result<u8> {
 
 fn run_check(args: CheckArgs) -> Result<u8> {
     let workspace = workspace::resolve(&args.workspace)?;
-    let fields = source::collect_field_defs(
-        &workspace,
-        args.struct_name.as_deref(),
-        args.exclude_tests,
-    )?;
+    let fields =
+        source::collect_field_defs(&workspace, args.struct_name.as_deref(), args.exclude_tests)?;
     eprintln!(
         "koyashi: analyzing {} struct field(s) across {} crate(s)",
         fields.len(),
@@ -143,7 +140,10 @@ mod tests {
     #[test]
     fn empty_include_allows_every_classification() {
         assert!(include_allows(&[], Classification::Unused));
-        assert!(include_allows(&[ClassFilter::Unused], Classification::Unused));
+        assert!(include_allows(
+            &[ClassFilter::Unused],
+            Classification::Unused
+        ));
         assert!(!include_allows(
             &[ClassFilter::Unused],
             Classification::ReadOnly

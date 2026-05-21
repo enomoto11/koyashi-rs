@@ -41,8 +41,14 @@ impl LspClient {
             .spawn()
             .with_context(|| format!("failed to spawn {}", program.display()))?;
 
-        let stdin = child.stdin.take().context("server stdin was not captured")?;
-        let stdout = child.stdout.take().context("server stdout was not captured")?;
+        let stdin = child
+            .stdin
+            .take()
+            .context("server stdin was not captured")?;
+        let stdout = child
+            .stdout
+            .take()
+            .context("server stdout was not captured")?;
 
         Ok(Self {
             child,
@@ -157,9 +163,16 @@ impl Drop for LspClient {
 
 /// A message received from the server.
 enum Incoming {
-    Response { id: i64, result: Result<Value> },
+    Response {
+        id: i64,
+        result: Result<Value>,
+    },
     Notification(Notification),
-    ServerRequest { id: Value, method: String, params: Value },
+    ServerRequest {
+        id: Value,
+        method: String,
+        params: Value,
+    },
 }
 
 fn classify(message: Value) -> Result<Incoming> {
