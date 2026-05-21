@@ -52,6 +52,7 @@ pub enum ClassFilter {
     Unused,
     WriteOnly,
     ReadOnly,
+    DeriveOnly,
 }
 
 /// Output format for `check`.

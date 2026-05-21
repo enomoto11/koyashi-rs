@@ -14,6 +14,8 @@ pub enum Classification {
     WriteOnly,
     /// The field is read but never reassigned after construction.
     ReadOnly,
+    /// The field is read only through a derive macro, never in hand-written code.
+    DeriveOnly,
 }
 
 impl Classification {
@@ -23,6 +25,7 @@ impl Classification {
             Classification::Unused => "unused",
             Classification::WriteOnly => "write-only",
             Classification::ReadOnly => "read-only",
+            Classification::DeriveOnly => "derive-only",
         }
     }
 }
@@ -59,6 +62,9 @@ pub struct FieldDef {
     pub struct_name: String,
     pub field_name: String,
     pub location: Location,
+    /// Whether the field's struct has a derive macro that reads every field
+    /// (such as `Debug`, `Serialize`, or `PartialEq`).
+    pub used_by_derive: bool,
 }
 
 impl FieldDef {
@@ -98,6 +104,7 @@ pub struct Summary {
     pub unused: u32,
     pub write_only: u32,
     pub read_only: u32,
+    pub derive_only: u32,
 }
 
 impl Summary {
@@ -108,6 +115,7 @@ impl Summary {
                 Classification::Unused => summary.unused += 1,
                 Classification::WriteOnly => summary.write_only += 1,
                 Classification::ReadOnly => summary.read_only += 1,
+                Classification::DeriveOnly => summary.derive_only += 1,
             }
         }
         summary

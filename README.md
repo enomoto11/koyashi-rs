@@ -21,6 +21,7 @@ field is used, not just *whether* it is used.
 | `unused` | The field has no references at all. |
 | `write-only` | The field's value is placed (assigned or initialized) but never read. |
 | `read-only` | The field is read but never reassigned after construction. |
+| `derive-only` | The field is read only through a derive macro (such as `Debug` or `Serialize`), never in hand-written code. |
 
 Fields that are both read and written are considered healthy and are not reported.
 
@@ -90,9 +91,9 @@ koyashi check --workspace . --format json
 
 ## Limitations
 
-- Fields read only through derive macros (for example a `#[derive(Serialize)]`
-  field that is serialized but never read in Rust code) are currently reported as
-  `write-only`.
+- Derive detection is based on the struct's `#[derive(..)]` list, so a field
+  whose struct derives a field-reading macro is treated as read by that derive
+  even if that specific field would be skipped.
 - Taking a mutable borrow (`&mut x.field`) is counted as a write even when the
   borrow is only read from afterwards.
 - References inside macro invocations are counted as plain reads.
