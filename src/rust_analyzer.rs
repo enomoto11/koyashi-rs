@@ -126,7 +126,10 @@ impl Analyzer {
                     }
                 }
                 Some(_) => {}
-                None => bail!("rust-analyzer exited before analysis completed"),
+                None => {
+                    let diagnostics = self.client.server_diagnostics();
+                    bail!("rust-analyzer exited before analysis completed{diagnostics}");
+                }
             }
         }
         bail!("timed out waiting for rust-analyzer to finish analysis")
