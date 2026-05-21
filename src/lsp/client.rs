@@ -2,9 +2,11 @@
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
@@ -16,6 +18,9 @@ use super::transport;
 /// A server notification: its method name paired with its `params` payload.
 pub type Notification = (String, Value);
 
+/// Number of trailing stderr lines retained from the server for diagnostics.
+const MAX_STDERR_LINES: usize = 40;
+
 /// A client that drives a language server over its standard input and output.
 pub struct LspClient {
     child: Child,
@@ -23,6 +28,9 @@ pub struct LspClient {
     stdout: BufReader<ChildStdout>,
     next_id: i64,
     notifications: VecDeque<Notification>,
+    /// Trailing stderr lines, continuously drained by [`Self::stderr_thread`].
+    stderr: Arc<Mutex<VecDeque<String>>>,
+    stderr_thread: Option<JoinHandle<()>>,
 }
 
 impl LspClient {
@@ -37,7 +45,7 @@ impl LspClient {
             .current_dir(working_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("failed to spawn {}", program.display()))?;
 
@@ -49,6 +57,32 @@ impl LspClient {
             .stdout
             .take()
             .context("server stdout was not captured")?;
+        let stderr = child
+            .stderr
+            .take()
+            .context("server stderr was not captured")?;
+
+        // Drain stderr on a background thread so the server never blocks on a
+        // full pipe, keeping only the trailing lines for diagnostics.
+        let captured: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let sink = Arc::clone(&captured);
+        let stderr_thread = thread::spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        let mut buffer = sink.lock().expect("stderr buffer poisoned");
+                        buffer.push_back(line.clone());
+                        while buffer.len() > MAX_STDERR_LINES {
+                            buffer.pop_front();
+                        }
+                    }
+                }
+            }
+        });
 
         Ok(Self {
             child,
@@ -56,6 +90,8 @@ impl LspClient {
             stdout: BufReader::new(stdout),
             next_id: 0,
             notifications: VecDeque::new(),
+            stderr: captured,
+            stderr_thread: Some(stderr_thread),
         })
     }
 
@@ -70,12 +106,15 @@ impl LspClient {
     {
         let id = self.next_id;
         self.next_id += 1;
-        self.send(json!({
+        if let Err(err) = self.send(json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": method,
             "params": params,
-        }))?;
+        })) {
+            let diagnostics = self.server_diagnostics();
+            bail!("failed to send `{method}` to the language server: {err}{diagnostics}");
+        }
 
         loop {
             match self.read_incoming()? {
@@ -93,7 +132,12 @@ impl LspClient {
                 Some(Incoming::ServerRequest { id, method, params }) => {
                     self.answer_server_request(id, &method, &params)?;
                 }
-                None => bail!("server closed the connection while awaiting `{method}`"),
+                None => {
+                    let diagnostics = self.server_diagnostics();
+                    bail!(
+                        "language server closed the connection while awaiting `{method}`{diagnostics}"
+                    );
+                }
             }
         }
     }
@@ -123,6 +167,24 @@ impl LspClient {
                 Some(Incoming::Response { .. }) => {}
                 None => return Ok(None),
             }
+        }
+    }
+
+    /// Terminate the server and return its captured stderr, formatted as a
+    /// suffix for an error message. Returns an empty string when there is none.
+    pub fn server_diagnostics(&mut self) -> String {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(handle) = self.stderr_thread.take() {
+            let _ = handle.join();
+        }
+        let buffer = self.stderr.lock().expect("stderr buffer poisoned");
+        let text = buffer.iter().cloned().collect::<String>();
+        let text = text.trim();
+        if text.is_empty() {
+            String::new()
+        } else {
+            format!("\n--- language server stderr ---\n{text}")
         }
     }
 
@@ -204,5 +266,31 @@ fn classify(message: Value) -> Result<Incoming> {
             Ok(Incoming::Response { id, result })
         }
         (None, None) => bail!("malformed message from language server"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closed_connection_error_surfaces_server_stderr() {
+        // A "server" that prints to stderr and exits without speaking LSP.
+        let mut client = LspClient::spawn(
+            Path::new("/bin/sh"),
+            ["-c", "echo diagnostic-from-server >&2; exit 1"],
+            Path::new("."),
+        )
+        .expect("spawn sh");
+
+        let error = client
+            .request::<Value, Value>("initialize", json!({}))
+            .expect_err("server exits without responding");
+
+        let message = format!("{error}");
+        assert!(
+            message.contains("diagnostic-from-server"),
+            "error should surface server stderr, got: {message}"
+        );
     }
 }
