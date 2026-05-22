@@ -44,6 +44,10 @@ pub struct CheckArgs {
     /// Severity threshold that controls the exit code.
     #[arg(long, value_enum, default_value_t = Severity::Warn)]
     pub severity: Severity,
+
+    /// Append every reference site to each finding.
+    #[arg(long)]
+    pub explain: bool,
 }
 
 /// A classification accepted by `--include`.

@@ -34,6 +34,20 @@ fn render_finding(finding: &Finding, use_color: bool) -> String {
         lines.push(format!("             ↳ {counts}"));
     }
     lines.push(format!("             ↳ {}", finding.message));
+    if !finding.references.is_empty() {
+        lines.push(format!(
+            "             ↳ {} reference site(s):",
+            finding.references.len()
+        ));
+        for entry in &finding.references {
+            lines.push(format!(
+                "                 {:<11}  {}:{}",
+                entry.kind,
+                entry.file.display(),
+                entry.line
+            ));
+        }
+    }
     lines.join("\n")
 }
 
@@ -103,6 +117,7 @@ mod tests {
                     writes: 3,
                     write_lines: vec![41, 58, 73],
                     message: "field is written but its value is never observed".to_string(),
+                    references: Vec::new(),
                 },
                 Finding {
                     classification: Classification::Unused,
@@ -114,6 +129,7 @@ mod tests {
                     writes: 0,
                     write_lines: vec![],
                     message: "no references found".to_string(),
+                    references: Vec::new(),
                 },
             ],
         )
@@ -139,5 +155,39 @@ mod tests {
     fn empty_report_renders_placeholder() {
         let report = Report::new(PathBuf::from("/ws"), vec![]);
         assert_eq!(render_text(&report, false), "no koyashi fields found");
+    }
+
+    #[test]
+    fn explain_output_lists_reference_sites() {
+        use crate::model::ReferenceEntry;
+
+        let finding = Finding {
+            classification: Classification::WriteOnly,
+            field: "Repo::cache".to_string(),
+            file: PathBuf::from("src/repo.rs"),
+            line: 10,
+            initializers: 1,
+            reads: 0,
+            writes: 1,
+            write_lines: vec![20],
+            message: "field is written but its value is never observed".to_string(),
+            references: vec![
+                ReferenceEntry {
+                    kind: "initializer",
+                    file: PathBuf::from("src/repo.rs"),
+                    line: 15,
+                },
+                ReferenceEntry {
+                    kind: "write",
+                    file: PathBuf::from("src/repo.rs"),
+                    line: 20,
+                },
+            ],
+        };
+        let report = Report::new(PathBuf::from("/ws"), vec![finding]);
+        let text = render_text(&report, false);
+        assert!(text.contains("2 reference site(s):"));
+        assert!(text.contains("initializer  src/repo.rs:15"));
+        assert!(text.contains("write        src/repo.rs:20"));
     }
 }

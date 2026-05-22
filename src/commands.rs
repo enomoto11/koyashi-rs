@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 use crate::cli::{CheckArgs, ClassFilter, Cli, Command, OutputFormat, Severity};
-use crate::model::{Classification, Finding, ReferenceKind, ReferenceSite, Report, Summary};
+use crate::model::{
+    Classification, Finding, ReferenceEntry, ReferenceKind, ReferenceSite, Report, Summary,
+};
 use crate::rust_analyzer::Analyzer;
 use crate::source::ReferenceKindMap;
 use crate::{analysis, report, source, workspace};
@@ -57,6 +59,11 @@ fn run_check(args: CheckArgs) -> Result<u8> {
         if !include_allows(&args.include, classification) {
             continue;
         }
+        let references = if args.explain {
+            reference_entries(&sites)
+        } else {
+            Vec::new()
+        };
         findings.push(Finding {
             classification,
             field: field.display_name(),
@@ -67,6 +74,7 @@ fn run_check(args: CheckArgs) -> Result<u8> {
             writes: stats.writes,
             write_lines: stats.write_lines,
             message: analysis::message_for(classification).to_string(),
+            references,
         });
     }
 
@@ -84,6 +92,20 @@ fn run_check(args: CheckArgs) -> Result<u8> {
     println!("{}", report::render(&report, args.format, use_color)?);
 
     Ok(exit_code(args.severity, &report.summary))
+}
+
+/// Convert reference sites into reporting entries, ordered by file and line.
+fn reference_entries(sites: &[ReferenceSite]) -> Vec<ReferenceEntry> {
+    let mut entries: Vec<ReferenceEntry> = sites
+        .iter()
+        .map(|site| ReferenceEntry {
+            kind: site.kind.label(),
+            file: site.location.file.clone(),
+            line: site.location.line,
+        })
+        .collect();
+    entries.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+    entries
 }
 
 /// Whether a classification passes the `--include` filter (empty allows all).
