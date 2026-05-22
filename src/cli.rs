@@ -56,8 +56,9 @@ pub struct ExplainArgs {
     pub workspace: PathBuf,
 
     /// The field to explain, written as `Struct::field`.
+    /// When omitted, every flagged field in the workspace is explained.
     #[arg(long)]
-    pub field: String,
+    pub field: Option<String>,
 }
 
 /// A classification accepted by `--include`.

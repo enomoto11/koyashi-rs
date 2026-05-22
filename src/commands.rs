@@ -77,35 +77,47 @@ fn run_check(args: CheckArgs) -> Result<u8> {
 fn run_explain(args: ExplainArgs) -> Result<u8> {
     let workspace = workspace::resolve(&args.workspace)?;
     let fields = source::collect_field_defs(&workspace, None, false)?;
-    let matched: Vec<&FieldDef> = fields
-        .iter()
-        .filter(|field| field.display_name() == args.field)
-        .collect();
-    if matched.is_empty() {
-        bail!(
-            "no field named `{}` was found; expected the form `Struct::field`",
-            args.field
-        );
-    }
+
+    let targets: Vec<&FieldDef> = match &args.field {
+        Some(name) => {
+            let matched: Vec<&FieldDef> = fields
+                .iter()
+                .filter(|field| field.display_name() == *name)
+                .collect();
+            if matched.is_empty() {
+                bail!("no field named `{name}` was found; expected the form `Struct::field`");
+            }
+            matched
+        }
+        None => fields.iter().collect(),
+    };
 
     eprintln!(
-        "koyashi: explaining {} field(s) matching `{}`",
-        matched.len(),
-        args.field
+        "koyashi: explaining {} field(s) across {} crate(s)",
+        targets.len(),
+        workspace.crates.len()
     );
 
     let mut analyzer = Analyzer::start(&workspace.root)?;
     let mut kind_cache: HashMap<PathBuf, ReferenceKindMap> = HashMap::new();
-    let mut blocks = Vec::with_capacity(matched.len());
-    for field in matched {
+    let mut blocks = Vec::new();
+    for field in targets {
         let sites = collect_sites(&mut analyzer, &mut kind_cache, field)?;
         let stats = analysis::aggregate(&sites);
         let classification = analysis::classify(&stats, field.used_by_derive);
+        // Without an explicit --field, only flagged fields are worth listing.
+        if args.field.is_none() && classification.is_none() {
+            continue;
+        }
         blocks.push(report::render_explanation(field, &sites, classification));
     }
     analyzer.shutdown()?;
 
-    println!("{}", blocks.join("\n\n"));
+    if blocks.is_empty() {
+        println!("no koyashi fields found");
+    } else {
+        println!("{}", blocks.join("\n\n"));
+    }
     Ok(0)
 }
 

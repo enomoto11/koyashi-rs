@@ -56,14 +56,15 @@ koyashi check --workspace <path>
 | `--format <text\|json>` | Output format. | `text` |
 | `--severity <info\|warn\|error>` | Severity threshold for the exit code. | `warn` |
 
-### `explain` — inspect a single field
+### `explain` — inspect fields in detail
 
 ```bash
-koyashi explain --workspace <path> --field 'Struct::field'
+koyashi explain --workspace <path> [--field 'Struct::field']
 ```
 
-Prints the field's definition, its classification, and every reference site
-listed by kind (`initializer`, `read`, `write`, `mut-borrow`).
+Prints each field's definition, its classification, and every reference site
+listed by kind (`initializer`, `read`, `write`, `mut-borrow`). With `--field`
+it explains that one field; without it, every flagged field in the workspace.
 
 ### Exit codes
 
