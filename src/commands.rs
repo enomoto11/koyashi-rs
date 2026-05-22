@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
-use crate::cli::{CheckArgs, ClassFilter, Cli, Command, OutputFormat, Severity};
-use crate::model::{Classification, Finding, ReferenceKind, ReferenceSite, Report, Summary};
+use crate::cli::{CheckArgs, ClassFilter, Cli, Command, ExplainArgs, OutputFormat, Severity};
+use crate::model::{
+    Classification, FieldDef, Finding, ReferenceKind, ReferenceSite, Report, Summary,
+};
 use crate::rust_analyzer::Analyzer;
 use crate::source::ReferenceKindMap;
 use crate::{analysis, report, source, workspace};
@@ -16,6 +18,7 @@ use crate::{analysis, report, source, workspace};
 pub fn run(cli: Cli) -> Result<u8> {
     match cli.command {
         Command::Check(args) => run_check(args),
+        Command::Explain(args) => run_explain(args),
     }
 }
 
@@ -34,22 +37,7 @@ fn run_check(args: CheckArgs) -> Result<u8> {
     let mut findings = Vec::new();
 
     for field in &fields {
-        let references = analyzer.references(&field.location)?;
-        let mut sites = Vec::with_capacity(references.len());
-        for location in references {
-            if !kind_cache.contains_key(&location.file) {
-                let kinds = source::reference_kinds(&location.file)?;
-                kind_cache.insert(location.file.clone(), kinds);
-            }
-            let kind = kind_cache[&location.file]
-                .get(&(location.line, location.character))
-                .copied()
-                // A reference outside the expression AST (e.g. inside a macro)
-                // is counted as a read so it is never mistaken for dead code.
-                .unwrap_or(ReferenceKind::Read);
-            sites.push(ReferenceSite { location, kind });
-        }
-
+        let sites = collect_sites(&mut analyzer, &mut kind_cache, field)?;
         let stats = analysis::aggregate(&sites);
         let Some(classification) = analysis::classify(&stats, field.used_by_derive) else {
             continue;
@@ -84,6 +72,65 @@ fn run_check(args: CheckArgs) -> Result<u8> {
     println!("{}", report::render(&report, args.format, use_color)?);
 
     Ok(exit_code(args.severity, &report.summary))
+}
+
+fn run_explain(args: ExplainArgs) -> Result<u8> {
+    let workspace = workspace::resolve(&args.workspace)?;
+    let fields = source::collect_field_defs(&workspace, None, false)?;
+    let matched: Vec<&FieldDef> = fields
+        .iter()
+        .filter(|field| field.display_name() == args.field)
+        .collect();
+    if matched.is_empty() {
+        bail!(
+            "no field named `{}` was found; expected the form `Struct::field`",
+            args.field
+        );
+    }
+
+    eprintln!(
+        "koyashi: explaining {} field(s) matching `{}`",
+        matched.len(),
+        args.field
+    );
+
+    let mut analyzer = Analyzer::start(&workspace.root)?;
+    let mut kind_cache: HashMap<PathBuf, ReferenceKindMap> = HashMap::new();
+    let mut blocks = Vec::with_capacity(matched.len());
+    for field in matched {
+        let sites = collect_sites(&mut analyzer, &mut kind_cache, field)?;
+        let stats = analysis::aggregate(&sites);
+        let classification = analysis::classify(&stats, field.used_by_derive);
+        blocks.push(report::render_explanation(field, &sites, classification));
+    }
+    analyzer.shutdown()?;
+
+    println!("{}", blocks.join("\n\n"));
+    Ok(0)
+}
+
+/// Resolve every reference to `field` and tag each with its syntactic kind.
+fn collect_sites(
+    analyzer: &mut Analyzer,
+    kind_cache: &mut HashMap<PathBuf, ReferenceKindMap>,
+    field: &FieldDef,
+) -> Result<Vec<ReferenceSite>> {
+    let references = analyzer.references(&field.location)?;
+    let mut sites = Vec::with_capacity(references.len());
+    for location in references {
+        if !kind_cache.contains_key(&location.file) {
+            let kinds = source::reference_kinds(&location.file)?;
+            kind_cache.insert(location.file.clone(), kinds);
+        }
+        let kind = kind_cache[&location.file]
+            .get(&(location.line, location.character))
+            .copied()
+            // A reference outside the expression AST (e.g. inside a macro) is
+            // counted as a read so it is never mistaken for dead code.
+            .unwrap_or(ReferenceKind::Read);
+        sites.push(ReferenceSite { location, kind });
+    }
+    Ok(sites)
 }
 
 /// Whether a classification passes the `--include` filter (empty allows all).

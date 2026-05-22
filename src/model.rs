@@ -44,6 +44,18 @@ pub enum ReferenceKind {
     MutBorrow,
 }
 
+impl ReferenceKind {
+    /// A short label for the reference kind.
+    pub fn label(self) -> &'static str {
+        match self {
+            ReferenceKind::Initializer => "initializer",
+            ReferenceKind::Read => "read",
+            ReferenceKind::Write => "write",
+            ReferenceKind::MutBorrow => "mut-borrow",
+        }
+    }
+}
+
 /// A position in a source file (one-based line, zero-based character).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {

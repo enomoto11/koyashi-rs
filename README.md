@@ -41,6 +41,8 @@ This installs the `koyashi` binary into `~/.cargo/bin`.
 
 ## Usage
 
+### `check` — scan a workspace
+
 ```bash
 koyashi check --workspace <path>
 ```
@@ -53,6 +55,15 @@ koyashi check --workspace <path>
 | `--struct <name>` | Restrict analysis to a single struct. | all |
 | `--format <text\|json>` | Output format. | `text` |
 | `--severity <info\|warn\|error>` | Severity threshold for the exit code. | `warn` |
+
+### `explain` — inspect a single field
+
+```bash
+koyashi explain --workspace <path> --field 'Struct::field'
+```
+
+Prints the field's definition, its classification, and every reference site
+listed by kind (`initializer`, `read`, `write`, `mut-borrow`).
 
 ### Exit codes
 
@@ -76,11 +87,15 @@ read-only    tests/fixtures/freeloaders/src/main.rs:8  Settings::label
              ↳ field is set once at construction and never mutated
 
 write-only   tests/fixtures/freeloaders/src/main.rs:12 Settings::last_message
-             ↳ 0 reads, 1 writes (lines 32)
+             ↳ 0 reads, 1 writes (lines 49)
              ↳ field is written but its value is never observed
 
 unused       tests/fixtures/freeloaders/src/main.rs:18 Orphan::forgotten
              ↳ no references found
+
+derive-only  tests/fixtures/freeloaders/src/main.rs:25 Telemetry::trace_id
+             ↳ 1 initializer, 0 reads, 0 writes
+             ↳ field is read only through a derive macro
 ```
 
 JSON output is available for CI integration:

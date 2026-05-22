@@ -16,6 +16,8 @@ pub struct Cli {
 pub enum Command {
     /// Scan a workspace and report freeloader fields.
     Check(CheckArgs),
+    /// Show every reference to a single field, grouped by kind.
+    Explain(ExplainArgs),
 }
 
 /// Arguments for `koyashi check`.
@@ -44,6 +46,18 @@ pub struct CheckArgs {
     /// Severity threshold that controls the exit code.
     #[arg(long, value_enum, default_value_t = Severity::Warn)]
     pub severity: Severity,
+}
+
+/// Arguments for `koyashi explain`.
+#[derive(Debug, Args)]
+pub struct ExplainArgs {
+    /// Workspace or crate root to analyze.
+    #[arg(long, default_value = ".")]
+    pub workspace: PathBuf,
+
+    /// The field to explain, written as `Struct::field`.
+    #[arg(long)]
+    pub field: String,
 }
 
 /// A classification accepted by `--include`.
