@@ -65,6 +65,8 @@ impl Analyzer {
 
     /// Return every reference to the symbol defined at `location`.
     pub fn references(&mut self, location: &Location) -> Result<Vec<Location>> {
+        // `location.character` is already a UTF-16 column, so it maps straight
+        // onto an LSP position; only the one-based line needs adjusting.
         let params = json!({
             "textDocument": { "uri": encode_file_uri(&location.file) },
             "position": {
