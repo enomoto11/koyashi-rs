@@ -44,6 +44,18 @@ pub enum ReferenceKind {
     MutBorrow,
 }
 
+impl ReferenceKind {
+    /// A short label for the reference kind.
+    pub fn label(self) -> &'static str {
+        match self {
+            ReferenceKind::Initializer => "initializer",
+            ReferenceKind::Read => "read",
+            ReferenceKind::Write => "write",
+            ReferenceKind::MutBorrow => "mut-borrow",
+        }
+    }
+}
+
 /// A position in a source file (one-based line, zero-based character).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
@@ -87,6 +99,14 @@ pub struct FieldStats {
     pub write_lines: Vec<u32>,
 }
 
+/// A single reference site, in a form suitable for reporting.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReferenceEntry {
+    pub kind: &'static str,
+    pub file: PathBuf,
+    pub line: u32,
+}
+
 /// One detected field, ready for reporting.
 #[derive(Debug, Clone, Serialize)]
 pub struct Finding {
@@ -99,6 +119,9 @@ pub struct Finding {
     pub writes: u32,
     pub write_lines: Vec<u32>,
     pub message: String,
+    /// Every reference site; populated only when `--explain` is set.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<ReferenceEntry>,
 }
 
 /// Per-classification counts.

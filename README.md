@@ -53,6 +53,7 @@ koyashi check --workspace <path>
 | `--struct <name>` | Restrict analysis to a single struct. | all |
 | `--format <text\|json>` | Output format. | `text` |
 | `--severity <info\|warn\|error>` | Severity threshold for the exit code. | `warn` |
+| `--explain` | Append every reference site to each finding. | off |
 
 ### Exit codes
 
