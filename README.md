@@ -90,6 +90,21 @@ JSON output is available for CI integration:
 koyashi check --workspace . --format json
 ```
 
+## Suppressing findings
+
+Place a `koyashi.toml` at the workspace root to silence intentional findings.
+Each entry maps a `Struct::field` name to the classifications to suppress:
+
+```toml
+[suppressions]
+"ApiResponse::trace_id" = ["derive-only"]
+"Cache::stale_entry" = ["write-only"]
+```
+
+A suppressed finding is dropped entirely — it does not appear in the report,
+the JSON output, or the exit code. `koyashi` prints how many findings were
+suppressed.
+
 ## Limitations
 
 - Derive detection is based on the struct's `#[derive(..)]` list, so a field

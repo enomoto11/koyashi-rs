@@ -1,0 +1,2 @@
+[suppressions]
+"Cache::stale_entry" = ["write-only"]
