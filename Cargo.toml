@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 description = "Detect freeloader (koyashi) struct fields in Rust workspaces without cargo build"
 license = "MIT"
+repository = "https://github.com/enomoto11/koyashi-rs"
+readme = "README.md"
+keywords = ["cli", "static-analysis", "dead-code", "linter", "rust-analyzer"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["/tests/fixtures"]
 
 [[bin]]
 name = "koyashi"
