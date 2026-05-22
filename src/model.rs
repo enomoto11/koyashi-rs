@@ -37,8 +37,11 @@ pub enum ReferenceKind {
     Initializer,
     /// A read of the field's value.
     Read,
-    /// An assignment, compound assignment, or mutable borrow of the field.
+    /// An assignment or compound assignment of the field.
     Write,
+    /// A mutable borrow (`&mut field`); the value may be read and/or written
+    /// through it, so it counts as both a read and a write.
+    MutBorrow,
 }
 
 /// A position in a source file (one-based line, zero-based character).

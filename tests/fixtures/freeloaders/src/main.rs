@@ -25,6 +25,16 @@ struct Telemetry {
     trace_id: String,
 }
 
+/// Its field is only ever `&mut`-borrowed by a helper.
+struct Budget {
+    /// healthy: a mutable borrow may read or write, so it is not reported.
+    remaining: u32,
+}
+
+fn spend(amount: &mut u32) {
+    *amount -= 1;
+}
+
 fn main() {
     let mut settings = Settings {
         label: "demo".to_string(),
@@ -43,4 +53,7 @@ fn main() {
         trace_id: "trace-001".to_string(),
     };
     println!("{telemetry:?}");
+
+    let mut budget = Budget { remaining: 10 };
+    spend(&mut budget.remaining);
 }

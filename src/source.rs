@@ -191,12 +191,12 @@ impl KindCollector {
             .insert((start.line as u32, start.column as u32), kind);
     }
 
-    /// Visit an expression in a write position: its outermost field access is
-    /// the field being written, while its base is an ordinary read.
-    fn visit_place(&mut self, expr: &Expr) {
+    /// Visit a place expression: its outermost field access is recorded with
+    /// `kind`, while its base is an ordinary read.
+    fn visit_place(&mut self, expr: &Expr, kind: ReferenceKind) {
         if let Expr::Field(field) = expr {
             if let Member::Named(ident) = &field.member {
-                self.record(ident, ReferenceKind::Write);
+                self.record(ident, kind);
             }
             self.visit_expr(&field.base);
         } else {
@@ -214,13 +214,13 @@ impl<'ast> Visit<'ast> for KindCollector {
     }
 
     fn visit_expr_assign(&mut self, node: &'ast ExprAssign) {
-        self.visit_place(&node.left);
+        self.visit_place(&node.left, ReferenceKind::Write);
         self.visit_expr(&node.right);
     }
 
     fn visit_expr_binary(&mut self, node: &'ast ExprBinary) {
         if is_compound_assignment(&node.op) {
-            self.visit_place(&node.left);
+            self.visit_place(&node.left, ReferenceKind::Write);
             self.visit_expr(&node.right);
         } else {
             visit::visit_expr_binary(self, node);
@@ -229,7 +229,7 @@ impl<'ast> Visit<'ast> for KindCollector {
 
     fn visit_expr_reference(&mut self, node: &'ast ExprReference) {
         if node.mutability.is_some() {
-            self.visit_place(&node.expr);
+            self.visit_place(&node.expr, ReferenceKind::MutBorrow);
         } else {
             visit::visit_expr_reference(self, node);
         }
@@ -347,10 +347,10 @@ mod tests {
     }
 
     #[test]
-    fn mutable_borrow_is_a_write_and_plain_borrow_is_a_read() {
+    fn mutable_borrow_is_distinct_from_write_and_plain_borrow_is_a_read() {
         assert_eq!(
             kinds("fn f(x: T) { let _ = &mut x.field; }"),
-            [ReferenceKind::Write]
+            [ReferenceKind::MutBorrow]
         );
         assert_eq!(
             kinds("fn f(x: T) { let _ = &x.field; }"),
