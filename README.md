@@ -94,8 +94,9 @@ koyashi check --workspace . --format json
 - Derive detection is based on the struct's `#[derive(..)]` list, so a field
   whose struct derives a field-reading macro is treated as read by that derive
   even if that specific field would be skipped.
-- Taking a mutable borrow (`&mut x.field`) is counted as a write even when the
-  borrow is only read from afterwards.
+- A field reached only through a mutable borrow (`&mut x.field`) is treated as
+  both read and written, so a genuinely write-only field used only this way is
+  not flagged.
 - References inside macro invocations are counted as plain reads.
 
 ## License

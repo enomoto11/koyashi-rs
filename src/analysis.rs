@@ -13,6 +13,12 @@ pub fn aggregate(sites: &[ReferenceSite]) -> FieldStats {
                 stats.writes += 1;
                 stats.write_lines.push(site.location.line);
             }
+            // A mutable borrow is ambiguous: count it as both, which keeps a
+            // field reached only this way out of the write-only bucket.
+            ReferenceKind::MutBorrow => {
+                stats.reads += 1;
+                stats.writes += 1;
+            }
         }
     }
     stats.write_lines.sort_unstable();
@@ -122,5 +128,21 @@ mod tests {
     #[test]
     fn read_and_write_is_healthy() {
         assert_eq!(classify(&stats(1, 4, 2), false), None);
+    }
+
+    #[test]
+    fn mut_borrow_aggregates_as_read_and_write() {
+        let site = ReferenceSite {
+            location: crate::model::Location {
+                file: std::path::PathBuf::from("x.rs"),
+                line: 3,
+                character: 0,
+            },
+            kind: ReferenceKind::MutBorrow,
+        };
+        let stats = aggregate(&[site]);
+        assert_eq!((stats.reads, stats.writes), (1, 1));
+        // A field reached only by a mutable borrow is healthy, not write-only.
+        assert_eq!(classify(&stats, false), None);
     }
 }
