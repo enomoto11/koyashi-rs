@@ -14,9 +14,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, rust-analyzer
 
       - uses: Swatinem/rust-cache@v2
+
+      # The end-to-end tests drive a real rust-analyzer process; fail loudly
+      # here rather than letting every e2e test silently skip itself.
+      - name: rust-analyzer version
+        run: rust-analyzer --version
 
       - name: rustfmt
         run: cargo fmt --all --check
