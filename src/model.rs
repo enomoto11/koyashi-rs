@@ -56,7 +56,11 @@ impl ReferenceKind {
     }
 }
 
-/// A position in a source file (one-based line, zero-based character).
+/// A position in a source file.
+///
+/// `line` is one-based; `character` is a zero-based UTF-16 column, matching the
+/// Language Server Protocol so that positions round-trip through rust-analyzer
+/// without further conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
     pub file: PathBuf,

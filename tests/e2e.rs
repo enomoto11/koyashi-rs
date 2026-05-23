@@ -149,6 +149,31 @@ fn explain_lists_reference_sites() {
 }
 
 #[test]
+fn non_bmp_line_does_not_break_classification() {
+    require_rust_analyzer!();
+    let output = run_check(&[
+        "--workspace",
+        fixture("non_bmp").to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout should be valid JSON");
+
+    let tag = report["findings"]
+        .as_array()
+        .expect("findings array")
+        .iter()
+        .find(|finding| finding["field"] == "Banner::tag")
+        .expect("Banner::tag should be reported");
+
+    // The write sits behind four emoji on its line. Only correct UTF-16 column
+    // mapping matches it as a write; otherwise it is miscounted as a read and
+    // the field is mislabelled `read-only`.
+    assert_eq!(tag["classification"], "write-only");
+}
+
+#[test]
 fn missing_rust_analyzer_yields_exit_code_two() {
     // Override resolution with a path that does not exist: workspace resolution
     // still succeeds, but starting the analyzer fails, which is a runtime error.

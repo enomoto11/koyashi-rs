@@ -55,7 +55,52 @@ pub fn reference_kinds(file: &Path) -> Result<ReferenceKindMap> {
         kinds: HashMap::new(),
     };
     collector.visit_file(&ast);
-    Ok(collector.kinds)
+    Ok(to_utf16_keys(collector.kinds, &content))
+}
+
+/// Convert a 0-based character column — the unit `syn` and `proc-macro2`
+/// report — into the 0-based UTF-16 column used by the Language Server
+/// Protocol, and hence by rust-analyzer.
+///
+/// LSP positions count UTF-16 code units, while `proc-macro2` spans count
+/// Unicode scalar values. The two agree across ASCII and the Basic Multilingual
+/// Plane but diverge once a line contains a character outside the BMP — an
+/// emoji, say — which is one `char` yet two UTF-16 code units. Without this
+/// mapping a reference after such a character is matched at the wrong column
+/// and silently miscounted.
+fn utf16_column(lines: &[&str], line: usize, char_column: usize) -> u32 {
+    let Some(text) = line.checked_sub(1).and_then(|index| lines.get(index)) else {
+        return char_column as u32;
+    };
+    text.chars()
+        .take(char_column)
+        .map(|c| c.len_utf16() as u32)
+        .sum()
+}
+
+/// Re-key a character-column map into the UTF-16 columns rust-analyzer reports.
+fn to_utf16_keys(kinds: ReferenceKindMap, content: &str) -> ReferenceKindMap {
+    let lines: Vec<&str> = content.lines().collect();
+    kinds
+        .into_iter()
+        .map(|((line, char_column), kind)| {
+            let column = utf16_column(&lines, line as usize, char_column as usize);
+            ((line, column), kind)
+        })
+        .collect()
+}
+
+/// Rewrite the columns of `defs` from character offsets to the UTF-16 offsets
+/// rust-analyzer expects in a `textDocument/references` request.
+fn convert_def_columns(defs: &mut [FieldDef], content: &str) {
+    let lines: Vec<&str> = content.lines().collect();
+    for def in defs {
+        def.location.character = utf16_column(
+            &lines,
+            def.location.line as usize,
+            def.location.character as usize,
+        );
+    }
 }
 
 fn collect_in_dir(
@@ -87,7 +132,9 @@ fn collect_in_file(
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
     let ast =
         syn::parse_file(&content).with_context(|| format!("failed to parse {}", path.display()))?;
+    let first_new = defs.len();
     visit_items(&ast.items, path, struct_filter, exclude_tests, defs);
+    convert_def_columns(&mut defs[first_new..], &content);
     Ok(())
 }
 
@@ -261,6 +308,8 @@ fn is_compound_assignment(op: &BinOp) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn field_names(src: &str, exclude_tests: bool) -> Vec<String> {
@@ -371,5 +420,74 @@ mod tests {
         let mut roles = kinds(src);
         roles.sort_by_key(|kind| format!("{kind:?}"));
         assert_eq!(roles, [ReferenceKind::Read, ReferenceKind::Write]);
+    }
+
+    #[test]
+    fn utf16_column_matches_char_column_across_the_bmp() {
+        // ASCII and Basic Multilingual Plane characters are one UTF-16 unit
+        // each, so the UTF-16 column equals the character column.
+        assert_eq!(utf16_column(&["let value = base.field;"], 1, 17), 17);
+        assert_eq!(utf16_column(&["// 日本語のコメント base.field"], 1, 15), 15);
+    }
+
+    #[test]
+    fn utf16_column_counts_astral_characters_as_two_units() {
+        // "😀" is one `char` but two UTF-16 code units, so each emoji before
+        // the column shifts the UTF-16 offset one unit past the char offset.
+        let line = "let _ = \"😀😀\"; base.field";
+        let char_column = line.chars().take_while(|&c| c != 'f').count();
+        assert_eq!(
+            utf16_column(&[line], 1, char_column),
+            char_column as u32 + 2,
+        );
+    }
+
+    #[test]
+    fn utf16_column_falls_back_when_the_line_is_absent() {
+        assert_eq!(utf16_column(&[], 1, 7), 7);
+        assert_eq!(utf16_column(&["only line"], 0, 4), 4);
+    }
+
+    #[test]
+    fn to_utf16_keys_shifts_keys_past_astral_characters() {
+        let content = "fn f(x: T) { let _ = \"😀\"; x.field = 1; }";
+        let mut collector = KindCollector {
+            kinds: HashMap::new(),
+        };
+        collector.visit_file(&syn::parse_file(content).expect("valid source"));
+
+        let (&(_, char_column), _) = collector
+            .kinds
+            .iter()
+            .next()
+            .expect("the write should be recorded");
+        let converted = to_utf16_keys(collector.kinds, content);
+        let (&(_, utf16_column), kind) = converted
+            .iter()
+            .next()
+            .expect("conversion preserves the entry");
+
+        // One astral character before the access adds one UTF-16 unit.
+        assert_eq!(utf16_column, char_column + 1);
+        assert_eq!(*kind, ReferenceKind::Write);
+    }
+
+    #[test]
+    fn convert_def_columns_rewrites_to_utf16_offsets() {
+        // Line 2 places `field` after one astral character: character column 6
+        // must become UTF-16 column 7.
+        let content = "struct S {\n    😀 field";
+        let mut defs = vec![FieldDef {
+            struct_name: "S".to_string(),
+            field_name: "field".to_string(),
+            location: Location {
+                file: PathBuf::from("s.rs"),
+                line: 2,
+                character: 6,
+            },
+            used_by_derive: false,
+        }];
+        convert_def_columns(&mut defs, content);
+        assert_eq!(defs[0].location.character, 7);
     }
 }
