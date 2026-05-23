@@ -1,0 +1,3 @@
+publish = false
+allow-branch = ["main"]
+pre-release-hook = ["cargo", "test", "--locked"]
