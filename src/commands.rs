@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 use crate::cli::{CheckArgs, ClassFilter, Cli, Command, OutputFormat, Severity};
+use crate::config::KoyashiConfig;
 use crate::model::{
     Classification, Finding, ReferenceEntry, ReferenceKind, ReferenceSite, Report, Summary,
 };
@@ -23,6 +24,7 @@ pub fn run(cli: Cli) -> Result<u8> {
 
 fn run_check(args: CheckArgs) -> Result<u8> {
     let workspace = workspace::resolve(&args.workspace)?;
+    let config = KoyashiConfig::load(&workspace.root)?;
     let fields =
         source::collect_field_defs(&workspace, args.struct_name.as_deref(), args.exclude_tests)?;
     eprintln!(
@@ -34,6 +36,7 @@ fn run_check(args: CheckArgs) -> Result<u8> {
     let mut analyzer = Analyzer::start(&workspace.root)?;
     let mut kind_cache: HashMap<PathBuf, ReferenceKindMap> = HashMap::new();
     let mut findings = Vec::new();
+    let mut suppressed = 0u32;
 
     for field in &fields {
         let references = analyzer.references(&field.location)?;
@@ -59,6 +62,11 @@ fn run_check(args: CheckArgs) -> Result<u8> {
         if !include_allows(&args.include, classification) {
             continue;
         }
+        let name = field.display_name();
+        if config.is_suppressed(&name, classification) {
+            suppressed += 1;
+            continue;
+        }
         let references = if args.explain {
             reference_entries(&sites)
         } else {
@@ -66,7 +74,7 @@ fn run_check(args: CheckArgs) -> Result<u8> {
         };
         findings.push(Finding {
             classification,
-            field: field.display_name(),
+            field: name,
             file: field.location.file.clone(),
             line: field.location.line,
             initializers: stats.initializers,
@@ -79,6 +87,10 @@ fn run_check(args: CheckArgs) -> Result<u8> {
     }
 
     analyzer.shutdown()?;
+
+    if suppressed > 0 {
+        eprintln!("koyashi: {suppressed} finding(s) suppressed by koyashi.toml");
+    }
 
     findings.sort_by(|a, b| {
         a.file

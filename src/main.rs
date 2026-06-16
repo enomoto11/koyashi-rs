@@ -3,6 +3,7 @@
 mod analysis;
 mod cli;
 mod commands;
+mod config;
 mod lsp;
 mod model;
 mod report;

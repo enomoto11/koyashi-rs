@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// How a struct field is used across the workspace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Classification {
     /// The field has no references at all.
